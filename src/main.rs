@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -7,7 +8,7 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 3 {
-        writeln!(io::stderr(), "Usage: {} tokenize <filename>", args[0]).unwrap();
+        eprintln!("Usage: {} tokenize <filename>", args[0]);
         process::exit(64); // Exit with a usage error code
     }
 
@@ -16,22 +17,19 @@ fn main() {
 
     match command.as_str() {
         "tokenize" => {
-            // Read file contents
             let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
-                writeln!(io::stderr(), "Failed to read file {}", filename).unwrap();
+                eprintln!("Failed to read file {}", filename);
                 process::exit(65); // Exit with a file-read error code
             });
 
-            // Tokenize the input
             let had_error = tokenize(&file_contents);
 
-            // Exit with an error code if any errors occurred during tokenization
             if had_error {
-                process::exit(65);
+                process::exit(65); // Exit with a non-zero error code if tokenization fails
             }
         }
         _ => {
-            writeln!(io::stderr(), "Unknown command: {}", command).unwrap();
+            eprintln!("Unknown command: {}", command);
             process::exit(64); // Exit with a usage error code
         }
     }
@@ -39,8 +37,30 @@ fn main() {
 
 fn tokenize(input: &str) -> bool {
     let mut had_error = false;
-    let mut chars = input.chars().peekable(); // Use Peekable for lookahead
-    let mut line = 1; // Line tracker
+    let mut chars = input.chars().peekable();
+    let mut line = 1;
+
+    let keywords: HashMap<&str, &str> = [
+        ("and", "AND"),
+        ("class", "CLASS"),
+        ("else", "ELSE"),
+        ("false", "FALSE"),
+        ("for", "FOR"),
+        ("fun", "FUN"),
+        ("if", "IF"),
+        ("nil", "NIL"),
+        ("or", "OR"),
+        ("print", "PRINT"),
+        ("return", "RETURN"),
+        ("super", "SUPER"),
+        ("this", "THIS"),
+        ("true", "TRUE"),
+        ("var", "VAR"),
+        ("while", "WHILE"),
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     while let Some(char) = chars.next() {
         match char {
@@ -56,65 +76,71 @@ fn tokenize(input: &str) -> bool {
             ';' => println!("SEMICOLON ; null"),
             '/' => {
                 if let Some('/') = chars.peek() {
-                    chars.next(); // Consume the second `/`
-                    // Skip the rest of the line for comments
+                    chars.next();
                     while let Some(&c) = chars.peek() {
                         if c == '\n' {
-                            break; // Stop skipping at the newline
+                            break;
                         }
-                        chars.next(); // Consume the comment characters
+                        chars.next();
                     }
                 } else {
                     println!("SLASH / null");
                 }
             }
             '0'..='9' => {
-                // Handle numbers (integers and floats)
                 let mut number = String::new();
-                number.push(char); // Start with the first digit
-
+                number.push(char);
                 let mut is_float = false;
 
                 while let Some(&next_char) = chars.peek() {
                     if next_char.is_ascii_digit() {
                         number.push(next_char);
-                        chars.next(); // Consume the digit
+                        chars.next();
                     } else if next_char == '.' && !is_float {
-                        is_float = true; // Mark as float if '.' is found
+                        is_float = true;
                         number.push(next_char);
-                        chars.next(); // Consume the '.'
+                        chars.next();
                     } else {
                         break;
                     }
                 }
 
-                if is_float {
-                    // Parse as f64
-                    let parsed_number: f64 = number.parse().unwrap();
+                // Removed error check for alphanumeric after number
 
-                    // If the fractional part is zero, print one decimal place (e.g. "87.0");
-                    // otherwise print the default float string.
-                    if parsed_number.fract() == 0.0 {
-                        let normalized = format!("{:.1}", parsed_number);
-                        println!("NUMBER {} {}", number, normalized);
-                    } else {
-                        let normalized = format!("{}", parsed_number);
-                        println!("NUMBER {} {}", number, normalized);
-                    }
+                if is_float {
+                    let parsed_number: f64 = number.parse().unwrap();
+                    println!("NUMBER {} {:.1}", number, parsed_number);
                 } else {
-                    // Integers remain "NUMBER x x.0"
                     println!("NUMBER {} {}.0", number, number);
                 }
             }
+            'a'..='z' | 'A'..='Z' | '_' => {
+                let mut identifier = String::new();
+                identifier.push(char);
+
+                while let Some(&next_char) = chars.peek() {
+                    if next_char.is_alphanumeric() || next_char == '_' {
+                        identifier.push(next_char);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+
+                if let Some(keyword_type) = keywords.get(identifier.as_str()) {
+                    println!("{} {} null", keyword_type, identifier);
+                } else {
+                    println!("IDENTIFIER {} null", identifier);
+                }
+            }
             '"' => {
-                // Handle string literals
                 let mut string_literal = String::new();
                 let mut unterminated = true;
 
                 while let Some(&c) = chars.peek() {
                     if c == '"' {
-                        chars.next(); // Consume the closing quote
-                        unterminated = false; // String is properly terminated
+                        chars.next();
+                        unterminated = false;
                         println!("STRING \"{}\" {}", string_literal, string_literal);
                         break;
                     } else if c == '\n' {
@@ -123,7 +149,7 @@ fn tokenize(input: &str) -> bool {
                         break;
                     } else {
                         string_literal.push(c);
-                        chars.next(); // Consume the character
+                        chars.next();
                     }
                 }
 
@@ -164,8 +190,8 @@ fn tokenize(input: &str) -> bool {
                     println!("EQUAL = null");
                 }
             }
-            '\n' => line += 1, // Increment line count for newline characters
-            ' ' | '\t' | '\r' => {} // Ignore whitespace
+            '\n' => line += 1,
+            ' ' | '\t' | '\r' => {}
             _ => {
                 eprintln!("[line {}] Error: Unexpected character: {}", line, char);
                 had_error = true;
@@ -173,7 +199,7 @@ fn tokenize(input: &str) -> bool {
         }
     }
 
-    println!("EOF  null"); // Always print EOF even if errors occurred
+    println!("EOF  null");
     had_error
 }
 
