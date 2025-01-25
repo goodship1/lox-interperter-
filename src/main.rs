@@ -267,8 +267,7 @@ enum TokenType {
     Number(f64),
     StringLit(String),
     True, False, Nil,
-    // We won't parse all the tokens above for this mini stage, just enough
-    // to show booleans, nil, numbers, parentheses, and strings.
+   
     Eof,
 }
 
